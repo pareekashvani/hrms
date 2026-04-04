@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
+import { Link, Navigate, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useAuth } from '../contexts/AuthContext'
 
-export default function Login() {
+export default function Login({ employeeView = false }) {
   const { user, login, loading } = useAuth()
   const location = useLocation()
   const from = location.state?.from?.pathname || '/'
@@ -29,14 +29,56 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#0f1419] px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#0f1419] px-4 py-8">
+      <div className="mb-6 flex flex-wrap items-center justify-center gap-2 text-sm">
+        <Link
+          to="/login/employee"
+          className={`rounded-lg px-4 py-2 font-medium no-underline transition-colors ${
+            employeeView
+              ? 'bg-blue-600 text-white'
+              : 'border border-slate-600 text-slate-300 hover:bg-slate-800'
+          }`}
+        >
+          Employee sign in
+        </Link>
+        <Link
+          to="/login"
+          className={`rounded-lg px-4 py-2 font-medium no-underline transition-colors ${
+            !employeeView
+              ? 'bg-slate-700 text-white'
+              : 'border border-slate-600 text-slate-300 hover:bg-slate-800'
+          }`}
+        >
+          Administrator sign in
+        </Link>
+      </div>
+
       <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-[#1a2332] p-8 shadow-xl">
-        <h1 className="text-2xl font-semibold text-white">Sign in</h1>
-        <p className="mt-1 text-sm text-slate-400">
-          Employees are invited by an administrator. Default admin:{' '}
-          <span className="text-slate-300">admin@gmail.com</span> /{' '}
-          <span className="text-slate-300">admin123</span>
-        </p>
+        <h1 className="text-2xl font-semibold text-white">
+          {employeeView ? 'Employee sign in' : 'Administrator sign in'}
+        </h1>
+
+        {employeeView ? (
+          <p className="mt-2 text-sm leading-relaxed text-slate-400">
+            Use the <strong className="text-slate-300">email</strong> and{' '}
+            <strong className="text-slate-300">temporary password</strong> your administrator created for you
+            (Employees → Create employee account). This is the same login page—only the instructions differ.
+          </p>
+        ) : (
+          <p className="mt-2 text-sm text-slate-400">
+            Default admin account:{' '}
+            <span className="text-slate-300">admin@gmail.com</span> /{' '}
+            <span className="text-slate-300">admin123</span>
+            <span className="mt-2 block text-slate-500">
+              Employees should use{' '}
+              <Link to="/login/employee" className="text-blue-400 hover:underline">
+                Employee sign in
+              </Link>
+              .
+            </span>
+          </p>
+        )}
+
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
             <label className="mb-1 block text-sm text-slate-300">Email</label>

@@ -21,6 +21,7 @@ export default function App() {
         />
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/login/employee" element={<Login employeeView />} />
           <Route
             element={
               <ProtectedRoute>
