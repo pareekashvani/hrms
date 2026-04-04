@@ -1,0 +1,28 @@
+.app-nav {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.app-nav a {
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.15s, background 0.15s;
+}
+
+.app-nav a:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.app-nav a.active {
+  color: var(--accent);
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.app-nav a.active:hover {
+  text-decoration: none;
+}

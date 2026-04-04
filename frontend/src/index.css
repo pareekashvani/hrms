@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-hrms-bg: #0f1419;
+  --color-hrms-surface: #1a2332;
+  --color-hrms-border: #2d3a4d;
+  --color-hrms-accent: #3b82f6;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  background-color: var(--color-hrms-bg);
+  color: #e6edf3;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+}
