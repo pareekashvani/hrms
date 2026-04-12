@@ -95,6 +95,15 @@ class AttendanceBase(BaseModel):
 
 class AttendanceCreate(AttendanceBase):
     employee_id: int
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+
+
+class AttendanceGeofenceConfig(BaseModel):
+    """Whether employee attendance is restricted to within radius_meters of the configured admin location."""
+
+    enabled: bool
+    radius_meters: int
 
 
 class AttendanceUpdate(BaseModel):

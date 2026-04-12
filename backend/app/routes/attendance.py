@@ -5,12 +5,25 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from ..config import get_settings
 from ..crud import attendance as att_crud
 from ..crud import employees as emp_crud
 from ..database import get_db
 from ..deps import get_current_user, get_employee_for_user, require_admin
+from ..geo_utils import haversine_meters
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
+
+
+@router.get("/geofence-config", response_model=schemas.AttendanceGeofenceConfig)
+def attendance_geofence_config(
+    _: Annotated[models.User, Depends(get_current_user)],
+):
+    s = get_settings()
+    enabled = (
+        s.attendance_admin_location_latitude is not None and s.attendance_admin_location_longitude is not None
+    )
+    return schemas.AttendanceGeofenceConfig(enabled=enabled, radius_meters=s.attendance_geofence_radius_meters)
 
 
 def _ensure_can_mark_attendance(
@@ -80,6 +93,28 @@ def mark_attendance(
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
     _ensure_can_mark_attendance(current, db, attendance.employee_id)
+
+    settings = get_settings()
+    admin_lat = settings.attendance_admin_location_latitude
+    admin_lon = settings.attendance_admin_location_longitude
+    geofence_on = admin_lat is not None and admin_lon is not None
+
+    if current.role != "admin" and geofence_on:
+        if attendance.latitude is None or attendance.longitude is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Location is required to mark attendance. Allow location access in your browser and try again.",
+            )
+        dist = haversine_meters(attendance.latitude, attendance.longitude, admin_lat, admin_lon)
+        if dist > settings.attendance_geofence_radius_meters:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"You must be within {settings.attendance_geofence_radius_meters} meters of "
+                    "the registered admin location to mark attendance."
+                ),
+            )
+
     try:
         return att_crud.create_attendance(db, attendance)
     except ValueError as e:

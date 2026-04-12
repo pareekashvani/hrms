@@ -51,6 +51,7 @@ export const api = {
     delete: (id) => apiClient.delete(`/employees/${id}`),
   },
   attendance: {
+    geofenceConfig: () => apiClient.get('/attendance/geofence-config').then((r) => r.data),
     list: (params = {}) => apiClient.get('/attendance', { params }).then((r) => r.data),
     byEmployee: (employeeId) =>
       apiClient.get(`/attendance/employee/${employeeId}`).then((r) => r.data),

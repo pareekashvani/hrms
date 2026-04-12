@@ -3,10 +3,39 @@ import toast from 'react-hot-toast'
 import { api } from '../api'
 import { useAuth } from '../contexts/AuthContext'
 
-function toIsoLocal(dtLocal) {
-  if (!dtLocal) return null
-  const d = new Date(dtLocal)
-  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+/** Combine attendance date (YYYY-MM-DD) with HTML time value (HH:mm or HH:mm:ss) into UTC ISO for the API. */
+function combineDateAndTimeToIso(dateStr, timeStr) {
+  const t = String(timeStr ?? '').trim()
+  if (!t) return null
+  const d = String(dateStr ?? '').trim()
+  if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return null
+  const [hh, mm, secRaw] = t.split(':')
+  const h = Number(hh)
+  const m = Number(mm)
+  const s = secRaw != null && secRaw !== '' ? Number(String(secRaw).slice(0, 2)) : 0
+  if (!Number.isFinite(h) || !Number.isFinite(m) || !Number.isFinite(s)) return null
+  const [y, mo, day] = d.split('-').map(Number)
+  const local = new Date(y, mo - 1, day, h, m, s, 0)
+  return Number.isNaN(local.getTime()) ? null : local.toISOString()
+}
+
+function formatStoredTime(iso) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+}
+
+function getCurrentPositionAsync() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('unsupported'))
+      return
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 20000,
+    })
+  })
 }
 
 export default function Attendance() {
@@ -20,6 +49,7 @@ export default function Attendance() {
   const [filterEmployeeId, setFilterEmployeeId] = useState('')
   const [filterFromDate, setFilterFromDate] = useState('')
   const [filterToDate, setFilterToDate] = useState('')
+  const [geofence, setGeofence] = useState(null)
 
   const [form, setForm] = useState({
     employee_id: '',
@@ -65,20 +95,69 @@ export default function Attendance() {
     }
   }, [isAdmin, myEmployeeId, loadEmployees, loadAttendance])
 
+  useEffect(() => {
+    let cancelled = false
+    api.attendance
+      .geofenceConfig()
+      .then((cfg) => {
+        if (!cancelled) setGeofence(cfg)
+      })
+      .catch(() => {
+        if (!cancelled) setGeofence({ enabled: false, radius_meters: 20 })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form.employee_id) {
       toast.error('Select an employee')
       return
     }
+    const dateStr = String(form.date ?? '').trim()
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      toast.error('Date is required')
+      return
+    }
+    if (form.status !== 'Present' && form.status !== 'Absent') {
+      toast.error('Status is required')
+      return
+    }
+
+    let latitude
+    let longitude
+    if (!isAdmin && geofence?.enabled) {
+      try {
+        const pos = await getCurrentPositionAsync()
+        latitude = pos.coords.latitude
+        longitude = pos.coords.longitude
+      } catch (err) {
+        const code = err?.code
+        if (code === 1) {
+          toast.error('Location permission denied. Allow location access to mark attendance.')
+        } else if (err?.message === 'unsupported') {
+          toast.error('This browser does not support GPS location.')
+        } else {
+          toast.error('Could not read your location. Try again with GPS enabled or move outdoors.')
+        }
+        return
+      }
+    }
+
     setSubmitting(true)
     try {
       const body = {
         employee_id: Number(form.employee_id),
         date: form.date,
         status: form.status,
-        check_in_time: toIsoLocal(form.check_in_time),
-        check_out_time: toIsoLocal(form.check_out_time),
+        check_in_time: combineDateAndTimeToIso(form.date, form.check_in_time),
+        check_out_time: combineDateAndTimeToIso(form.date, form.check_out_time),
+      }
+      if (latitude != null && longitude != null) {
+        body.latitude = latitude
+        body.longitude = longitude
       }
       await api.attendance.mark(body)
       toast.success('Attendance saved')
@@ -129,6 +208,12 @@ export default function Attendance() {
         <p className="text-slate-400">
           {isAdmin ? 'Mark attendance for any employee.' : 'Mark your own attendance only.'}
         </p>
+        {!isAdmin && geofence?.enabled ? (
+          <p className="mt-2 rounded-lg border border-blue-900/60 bg-blue-950/30 px-3 py-2 text-sm text-blue-200/90">
+            Location check is on: you must be within {geofence.radius_meters} m of the admin location. Your browser
+            will ask for a one-time location when you save.
+          </p>
+        ) : null}
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-[#1a2332] p-5">
@@ -153,18 +238,25 @@ export default function Attendance() {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-400">Date</label>
+            <label className="mb-1 block text-xs text-slate-400">
+              Date <span className="text-red-400">*</span>
+            </label>
             <input
               type="date"
               required
+              aria-required="true"
               value={form.date}
               onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
               className="w-full rounded-lg border border-slate-600 bg-[#0f1419] px-3 py-2 text-white"
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-400">Status</label>
+            <label className="mb-1 block text-xs text-slate-400">
+              Status <span className="text-red-400">*</span>
+            </label>
             <select
+              required
+              aria-required="true"
               value={form.status}
               onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
               className="w-full rounded-lg border border-slate-600 bg-[#0f1419] px-3 py-2 text-white"
@@ -174,18 +266,22 @@ export default function Attendance() {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-400">Check-in (optional)</label>
+            <label className="mb-1 block text-xs text-slate-400">Check-in time (optional)</label>
+            <p className="mb-1 text-[11px] text-slate-500">Uses the attendance date above.</p>
             <input
-              type="datetime-local"
+              type="time"
+              step={60}
               value={form.check_in_time}
               onChange={(e) => setForm((f) => ({ ...f, check_in_time: e.target.value }))}
               className="w-full rounded-lg border border-slate-600 bg-[#0f1419] px-3 py-2 text-white"
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-400">Check-out (optional)</label>
+            <label className="mb-1 block text-xs text-slate-400">Check-out time (optional)</label>
+            <p className="mb-1 text-[11px] text-slate-500">Uses the attendance date above.</p>
             <input
-              type="datetime-local"
+              type="time"
+              step={60}
               value={form.check_out_time}
               onChange={(e) => setForm((f) => ({ ...f, check_out_time: e.target.value }))}
               className="w-full rounded-lg border border-slate-600 bg-[#0f1419] px-3 py-2 text-white"
@@ -291,14 +387,10 @@ export default function Attendance() {
                         </span>
                       </td>
                       <td className="py-2 pr-4 text-xs text-slate-400">
-                        {rec.check_in_time
-                          ? new Date(rec.check_in_time).toLocaleString()
-                          : '—'}
+                        {formatStoredTime(rec.check_in_time)}
                       </td>
                       <td className="py-2 text-xs text-slate-400">
-                        {rec.check_out_time
-                          ? new Date(rec.check_out_time).toLocaleString()
-                          : '—'}
+                        {formatStoredTime(rec.check_out_time)}
                       </td>
                     </tr>
                   )
