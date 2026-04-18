@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -30,6 +30,19 @@ class Employee(Base):
     user = relationship("User", back_populates="employee_profile")
     attendance_records = relationship("Attendance", back_populates="employee", cascade="all, delete-orphan")
     leave_requests = relationship("Leave", back_populates="employee", cascade="all, delete-orphan")
+
+
+class AdminGeofenceState(Base):
+    """Singleton row (id=1): admin-set GPS anchor for employee attendance checks."""
+
+    __tablename__ = "admin_geofence_state"
+
+    id = Column(Integer, primary_key=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    radius_meters = Column(Integer, nullable=False, default=30)
+    updated_at = Column(DateTime, nullable=True)
+    updated_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
 class Attendance(Base):

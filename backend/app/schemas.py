@@ -1,7 +1,7 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_serializer, model_validator
 
 
 # --- Auth ---
@@ -54,6 +54,21 @@ class AdminUserRow(BaseModel):
         from_attributes = True
 
 
+class AdminSetLocation(BaseModel):
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    radius_meters: Optional[int] = Field(default=None, ge=1, le=5000)
+
+
+class AdminLocationStatus(BaseModel):
+    geofence_active: bool
+    source: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    radius_meters: int = 30
+    updated_at: Optional[datetime] = None
+
+
 class MeResponse(UserPublic):
     employee: Optional["EmployeeResponse"] = None
 
@@ -95,6 +110,7 @@ class AttendanceBase(BaseModel):
 
 class AttendanceCreate(AttendanceBase):
     employee_id: int
+    check_in_time: datetime = Field(..., description="Required when marking attendance")
     latitude: Optional[float] = Field(default=None, ge=-90, le=90)
     longitude: Optional[float] = Field(default=None, ge=-180, le=180)
 
@@ -104,6 +120,7 @@ class AttendanceGeofenceConfig(BaseModel):
 
     enabled: bool
     radius_meters: int
+    source: str = "none"  # database | environment | none
 
 
 class AttendanceUpdate(BaseModel):
@@ -119,6 +136,16 @@ class AttendanceResponse(BaseModel):
     status: str
     check_in_time: Optional[datetime] = None
     check_out_time: Optional[datetime] = None
+
+    @field_serializer("check_in_time", "check_out_time", when_used="json")
+    def serialize_attendance_times_utc(self, v: Optional[datetime]) -> Optional[str]:
+        """Naive DB datetimes are UTC instants from the client; emit Z so browsers parse correctly."""
+        if v is None:
+            return None
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        out = v.isoformat()
+        return out.replace("+00:00", "Z") if out.endswith("+00:00") else out
 
     class Config:
         from_attributes = True
