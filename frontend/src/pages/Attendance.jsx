@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { api } from '../api'
 import { useAuth } from '../contexts/AuthContext'
+import { getCurrentPositionAsync } from '../geo'
 
 /** Combine attendance date (YYYY-MM-DD) with HTML time value (HH:mm or HH:mm:ss) into UTC ISO for the API. */
 function combineDateAndTimeToIso(dateStr, timeStr) {
@@ -19,22 +20,34 @@ function combineDateAndTimeToIso(dateStr, timeStr) {
   return Number.isNaN(local.getTime()) ? null : local.toISOString()
 }
 
-function formatStoredTime(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+/**
+ * API returns naive ISO datetimes (e.g. "2026-04-21T04:30:00") for values stored as UTC wall time.
+ * `new Date(...)` would treat those as *local* time, shifting IST display by 5h30.
+ * Treat naive strings as UTC by appending Z when no offset is present.
+ */
+function parseApiDateTimeAsUtc(value) {
+  if (value == null || value === '') return null
+  let s = String(value).trim()
+  if (!s) return null
+  s = s.replace(/^(\d{4}-\d{2}-\d{2})\s+/, '$1T')
+  const hasExplicitTz =
+    /[zZ]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) || /[+-]\d{2}\d{2}$/.test(s)
+  if (!hasExplicitTz && /^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    s = `${s}Z`
+  }
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? null : d
 }
 
-function getCurrentPositionAsync() {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('unsupported'))
-      return
-    }
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 20000,
-    })
+function formatStoredTime(iso) {
+  if (!iso) return '—'
+  const d = parseApiDateTimeAsUtc(iso)
+  if (!d) return '—'
+  return d.toLocaleTimeString('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata',
   })
 }
 
@@ -125,6 +138,16 @@ export default function Attendance() {
       toast.error('Status is required')
       return
     }
+    const checkInTimeTrimmed = String(form.check_in_time ?? '').trim()
+    if (!checkInTimeTrimmed) {
+      toast.error('Please select check-in time')
+      return
+    }
+    const checkInIso = combineDateAndTimeToIso(form.date, form.check_in_time)
+    if (!checkInIso) {
+      toast.error('Please select check-in time')
+      return
+    }
 
     let latitude
     let longitude
@@ -152,7 +175,7 @@ export default function Attendance() {
         employee_id: Number(form.employee_id),
         date: form.date,
         status: form.status,
-        check_in_time: combineDateAndTimeToIso(form.date, form.check_in_time),
+        check_in_time: checkInIso,
         check_out_time: combineDateAndTimeToIso(form.date, form.check_out_time),
       }
       if (latitude != null && longitude != null) {
@@ -212,6 +235,11 @@ export default function Attendance() {
           <p className="mt-2 rounded-lg border border-blue-900/60 bg-blue-950/30 px-3 py-2 text-sm text-blue-200/90">
             Location check is on: you must be within {geofence.radius_meters} m of the admin location. Your browser
             will ask for a one-time location when you save.
+            {geofence.source === 'database'
+              ? ' (Anchor saved from admin dashboard.)'
+              : geofence.source === 'environment'
+                ? ' (Anchor from server environment.)'
+                : null}
           </p>
         ) : null}
       </div>
@@ -266,7 +294,9 @@ export default function Attendance() {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-400">Check-in time (optional)</label>
+            <label className="mb-1 block text-xs text-slate-400">
+              Check-in time <span className="text-red-400">*</span>
+            </label>
             <p className="mb-1 text-[11px] text-slate-500">Uses the attendance date above.</p>
             <input
               type="time"

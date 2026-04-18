@@ -37,6 +37,10 @@ export const api = {
     createEmployee: (body) =>
       apiClient.post('/admin/create-employee', body).then((r) => r.data),
     users: () => apiClient.get('/admin/users').then((r) => r.data),
+    locationStatus: () => apiClient.get('/admin/location-status').then((r) => r.data),
+    setAdminLocation: (body) =>
+      apiClient.post('/admin/set-admin-location', body).then((r) => r.data),
+    clearAdminLocation: () => apiClient.delete('/admin/location').then((r) => r.data),
   },
   analytics: {
     summary: () => apiClient.get('/analytics/summary').then((r) => r.data),
