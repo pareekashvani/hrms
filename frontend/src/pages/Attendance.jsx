@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { api } from '../api'
 import { useAuth } from '../contexts/AuthContext'
-import { getCurrentPositionAsync } from '../geo'
+import { getCurrentPositionAsync, haversineMeters, isAtOrAfterSevenPmIst } from '../geo'
 
 /** Combine attendance date (YYYY-MM-DD) with HTML time value (HH:mm or HH:mm:ss) into UTC ISO for the API. */
 function combineDateAndTimeToIso(dateStr, timeStr) {
@@ -116,7 +116,7 @@ export default function Attendance() {
         if (!cancelled) setGeofence(cfg)
       })
       .catch(() => {
-        if (!cancelled) setGeofence({ enabled: false, radius_meters: 20 })
+        if (!cancelled) setGeofence({ enabled: false, radius_meters: 20, latitude: null, longitude: null })
       })
     return () => {
       cancelled = true
@@ -149,6 +149,13 @@ export default function Attendance() {
       return
     }
 
+    const checkOutIso = combineDateAndTimeToIso(form.date, form.check_out_time)
+
+    if (checkOutIso && !isAdmin && !isAtOrAfterSevenPmIst()) {
+      toast.error('You can only check out after 7:00 PM.')
+      return
+    }
+
     let latitude
     let longitude
     if (!isAdmin && geofence?.enabled) {
@@ -167,6 +174,19 @@ export default function Attendance() {
         }
         return
       }
+      if (
+        checkOutIso &&
+        geofence.latitude != null &&
+        geofence.longitude != null &&
+        latitude != null &&
+        longitude != null
+      ) {
+        const dist = haversineMeters(latitude, longitude, geofence.latitude, geofence.longitude)
+        if (dist > geofence.radius_meters) {
+          toast.error('You must be within 30 meters of the admin location to check out.')
+          return
+        }
+      }
     }
 
     setSubmitting(true)
@@ -176,7 +196,7 @@ export default function Attendance() {
         date: form.date,
         status: form.status,
         check_in_time: checkInIso,
-        check_out_time: combineDateAndTimeToIso(form.date, form.check_out_time),
+        check_out_time: checkOutIso,
       }
       if (latitude != null && longitude != null) {
         body.latitude = latitude
@@ -234,7 +254,8 @@ export default function Attendance() {
         {!isAdmin && geofence?.enabled ? (
           <p className="mt-2 rounded-lg border border-blue-900/60 bg-blue-950/30 px-3 py-2 text-sm text-blue-200/90">
             Location check is on: you must be within {geofence.radius_meters} m of the admin location. Your browser
-            will ask for a one-time location when you save.
+            will ask for a one-time location when you save. Check-out is only allowed from 7:00 PM (IST) onward and
+            while you are within that radius.
             {geofence.source === 'database'
               ? ' (Anchor saved from admin dashboard.)'
               : geofence.source === 'environment'
@@ -308,7 +329,10 @@ export default function Attendance() {
           </div>
           <div>
             <label className="mb-1 block text-xs text-slate-400">Check-out time (optional)</label>
-            <p className="mb-1 text-[11px] text-slate-500">Uses the attendance date above.</p>
+            <p className="mb-1 text-[11px] text-slate-500">
+              Uses the attendance date above. Allowed from 7:00 PM IST; with location check on, you must be within the
+              admin radius to check out.
+            </p>
             <input
               type="time"
               step={60}

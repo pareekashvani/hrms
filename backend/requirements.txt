@@ -2,6 +2,7 @@ python-dotenv>=1.0.0
 fastapi>=0.100,<0.115
 uvicorn[standard]>=0.22
 sqlalchemy>=2.0
+psycopg2-binary>=2.9
 pydantic>=2.0
 email-validator>=2.0
 bcrypt>=4.0

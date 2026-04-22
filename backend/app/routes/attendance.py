@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +14,13 @@ from ..geo_utils import haversine_meters
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
+# India Standard Time (no DST); matches frontend attendance display / checkout window.
+_CHECKOUT_TZ = timezone(timedelta(hours=5, minutes=30))
+
+
+def _checkout_allowed_now_local() -> bool:
+    return datetime.now(_CHECKOUT_TZ).time() >= time(19, 0)
+
 
 @router.get("/geofence-config", response_model=schemas.AttendanceGeofenceConfig)
 def attendance_geofence_config(
@@ -25,6 +32,8 @@ def attendance_geofence_config(
         enabled=g.enabled,
         radius_meters=g.radius_meters,
         source=g.source,
+        latitude=g.latitude if g.enabled else None,
+        longitude=g.longitude if g.enabled else None,
     )
 
 
@@ -97,6 +106,13 @@ def mark_attendance(
     _ensure_can_mark_attendance(current, db, attendance.employee_id)
 
     g = resolve_geofence(db)
+    has_checkout = attendance.check_out_time is not None
+
+    if current.role != "admin" and has_checkout and not _checkout_allowed_now_local():
+        raise HTTPException(
+            status_code=400,
+            detail="You can only check out after 7:00 PM.",
+        )
 
     if current.role != "admin" and g.enabled:
         if attendance.latitude is None or attendance.longitude is None:
@@ -109,6 +125,11 @@ def mark_attendance(
             raise HTTPException(status_code=500, detail="Geofence anchor is misconfigured")
         dist = haversine_meters(attendance.latitude, attendance.longitude, anchor_lat, anchor_lon)
         if dist > g.radius_meters:
+            if has_checkout:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You must be within 30 meters of the admin location to check out.",
+                )
             raise HTTPException(
                 status_code=403,
                 detail=(
